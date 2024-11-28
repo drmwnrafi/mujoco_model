@@ -28,5 +28,5 @@
 ## Model Previews
 | **Model**            | **Preview**                                     |
 |-----------------------|------------------------------------------------|
-| **Simple Quadcopter** | ![Simple Quadcopter](mujoco_model/assets/low_poly_f450.png) |
-| **F450 Quadcopter**   | ![F450 Quadcopter](mujoco_model/assets/f450.png)           |
+| **Simple Quadcopter** | ![Simple Quadcopter](assets/low_poly_f450.png) |
+| **F450 Quadcopter**   | ![F450 Quadcopter](assets/f450.png)           |
