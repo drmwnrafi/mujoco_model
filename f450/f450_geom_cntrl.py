@@ -125,7 +125,7 @@ def render_trajectory(scene, trajectory_points):
                              point2)
             scene.ngeom += 1
 
-xml_path = "f450/scene_low_poly.xml"
+xml_path = "f450/scene.xml"
 # xml_path = "scene.xml"
 model = mj.MjModel.from_xml_path(xml_path)
 data = mj.MjData(model)

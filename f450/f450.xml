@@ -46,10 +46,10 @@
     </worldbody>
 
     <actuator>
-        <motor ctrlrange="0 100" name="motor1" site="thrust1" gear="0 0 1 0 0 -0.0201"/>
-        <motor ctrlrange="0 100" name="motor2" site="thrust2" gear="0 0 1 0 0  0.0201"/>
-        <motor ctrlrange="0 100" name="motor3" site="thrust3" gear="0 0 1 0 0 -0.0201"/>
-        <motor ctrlrange="0 100" name="motor4" site="thrust4" gear="0 0 1 0 0  0.0201"/>
+        <motor name="motor1" site="thrust1" gear="0 0 1 0 0 -0.0201"/>
+        <motor name="motor2" site="thrust2" gear="0 0 1 0 0  0.0201"/>
+        <motor name="motor3" site="thrust3" gear="0 0 1 0 0 -0.0201"/>
+        <motor name="motor4" site="thrust4" gear="0 0 1 0 0  0.0201"/>
     </actuator>
 
      <sensor>
