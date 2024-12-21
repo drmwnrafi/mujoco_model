@@ -4,7 +4,7 @@ from mujoco.glfw import glfw
 from controller import GeometricControl
 from traj_gen.differential_flatness import TrajectoryOptimizer
 from mouse_callbacks import *
-from scipy.interpolate import interp1d
+import matplotlib.pyplot as plt
         
 def keyboard(window, key, scancode, act, mods):
     if act == glfw.PRESS and key == glfw.KEY_BACKSPACE:
@@ -125,8 +125,8 @@ def render_trajectory(scene, trajectory_points):
                              point2)
             scene.ngeom += 1
 
-xml_path = "f450/scene.xml"
-# xml_path = "scene.xml"
+xml_path = "f450/scene_low_poly.xml"
+# xml_path = "f450/scene.xml"
 model = mj.MjModel.from_xml_path(xml_path)
 data = mj.MjData(model)
 cam = mj.MjvCamera()
@@ -160,33 +160,30 @@ cam.distance = 40
 cam.lookat = np.array([0.0, 0.0, 0.0])
 
 param = {
-    "J": np.zeros((3, 3)),  
-    "m": 1.325,  
-    "g": 9.81    
+    "m": max(model.body_mass),
+    "J": np.diag(model.body_inertia[1, :]),
+    "g": 9.81,  
 }
 
-H = np.zeros((model.nv, model.nv))
-mj.mj_fullM(model, H, data.qM)
-param["J"] = H[-3:, -3:]
-print(param["J"])
-# kx, kv, kR, komega = np.array([25, 25, 170]), np.array([8, 8, 20]), 30, 2.5  # control gains
-# kx, kv, kR, komega = 10, 2, 25, 5  # control gains
-kx, kv, kR, komega = 10, 5, 25, 5  # control gains
+kx     = [10, 10, 10] 
+kv     = [5, 5, 5]
+kR     = [25, 25, 25] 
+komega = [6, 6, 6]  # control gains
 
 waypoints = np.array([
-    [0, 0, 0.35, 0],
-    [0, 5, 5, 0],
-    [5, 0, 5, 0],
-    [0, -5, 5, 0],
-    [-5, 0, 5, 0],
-    [0, 5, 10, 0],
+    [0, 0, 0, 0],
+    [0, 0, 5, 0],
+    [5, 0, 6, 0],
+    [0, -5, 7, 0],
+    [-5, 0, 8, 0],
+    [0, 5, 9, 0],
 ])
 n_coeffs = [8, 8, 8, 4]  
 derivatives = [4, 4, 4, 2] 
-times = [0, 4, 8, 12, 16, 22]
+times = [0, 3, 8, 12, 16, 22]
 
 optimizer = TrajectoryOptimizer(n_coeffs, derivatives, times)
-states, coeff = optimizer.generate_trajectory(waypoints, num_points=200)
+states, coeff = optimizer.generate_trajectory(waypoints, num_points=400)
 
 controller = GeometricControl(kx, kv, kR, komega)
 
@@ -212,6 +209,16 @@ N_inv = np.linalg.inv(N)
 motor_names = ["motor1", "motor2", "motor3", "motor4"]
 motor_ids = [model.actuator(name).id for name in motor_names]
 
+simulation_time = []
+actual_positions = []
+actual_velocities = []
+desired_positions = []
+desired_velocities = []
+actual_rot = []
+actual_omega = []
+desired_rot = []
+desired_omega = []
+
 
 while not glfw.window_should_close(window):
     time_prev = data.time
@@ -227,12 +234,19 @@ while not glfw.window_should_close(window):
         x = np.concatenate((position, quaternion, velocity, angular_velocity))
 
         t = data.time
-        Fz, M = controller.controller(t, x, states, times, param)
-
+        Fz, M, pos, pos_des, vel, vel_des, omega, omega_des = controller.controller(t, times, x, states, param)
         motor_inputs = controller.actuator_allocation(Fz, M, N_inv)
-
+        
         for motor_id, force in zip(motor_ids, motor_inputs):
             data.ctrl[motor_id] = force  
+            
+        simulation_time.append(t)
+        actual_positions.append(pos)
+        actual_velocities.append(vel)
+        desired_positions.append(pos_des)
+        desired_velocities.append(vel_des)
+        actual_omega.append(omega)
+        desired_omega.append(omega_des)
 
         mj.mj_step(model, data)
 
@@ -240,9 +254,77 @@ while not glfw.window_should_close(window):
     viewport = mj.MjrRect(0, 0, viewport_width, viewport_height)
     mj.mjv_updateScene(model, data, opt, None, cam, mj.mjtCatBit.mjCAT_ALL.value, scene)
     render_waypoints(scene, waypoints)
-    render_trajectory(scene, trajectory_points)
+    # render_trajectory(scene, trajectory_points[::5])
     mj.mjr_render(viewport, scene, context)
     glfw.swap_buffers(window)
     glfw.poll_events()
 
 glfw.terminate()
+
+# Convert lists to numpy arrays
+simulation_time = np.array(simulation_time)
+actual_positions = np.array(actual_positions)
+actual_velocities = np.array(actual_velocities)
+desired_positions = np.array(desired_positions)
+desired_velocities = np.array(desired_velocities)
+actual_rot = np.array(actual_rot)
+actual_omega = np.array(actual_omega)
+desired_rot = np.array(desired_rot)
+desired_omega = np.array(desired_omega)
+
+# Plot results
+plt.figure(figsize=(15, 10))
+
+# Position Plot
+plt.subplot(4, 1, 1)
+plt.plot(simulation_time, actual_positions[:, 0], label="Actual X", color="blue")
+plt.plot(simulation_time, desired_positions[:, 0], label="Desired X", linestyle="--", color="blue", linewidth=2)
+plt.plot(simulation_time, actual_positions[:, 1], label="Actual Y", color="green")
+plt.plot(simulation_time, desired_positions[:, 1], label="Desired Y", linestyle="--", color="green", linewidth=2)
+plt.plot(simulation_time, actual_positions[:, 2], label="Actual Z", color="red")
+plt.plot(simulation_time, desired_positions[:, 2], label="Desired Z", linestyle="--", color="red", linewidth=2)
+plt.title("Position")
+plt.xlabel("Time (s)")
+plt.ylabel("Position (m)")
+plt.legend()
+
+# Velocity Plot
+plt.subplot(4, 1, 2)
+plt.plot(simulation_time, actual_velocities[:, 0], label="Actual Vx", color="blue")
+plt.plot(simulation_time, desired_velocities[:, 0], label="Desired Vx", linestyle="--", color="blue", linewidth=2)
+plt.plot(simulation_time, actual_velocities[:, 1], label="Actual Vy", color="green")
+plt.plot(simulation_time, desired_velocities[:, 1], label="Desired Vy", linestyle="--", color="green", linewidth=2)
+plt.plot(simulation_time, actual_velocities[:, 2], label="Actual Vz", color="red")
+plt.plot(simulation_time, desired_velocities[:, 2], label="Desired Vz", linestyle="--", color="red", linewidth=2)
+plt.title("Velocity")
+plt.xlabel("Time (s)")
+plt.ylabel("Velocity (m/s)")
+# plt.legend()
+plt.tight_layout()
+
+# plt.subplot(4, 1, 3)
+# plt.plot(simulation_time, actual_rot[:, 0], label="Actual Rot_x", color="blue")
+# plt.plot(simulation_time, desired_rot[:, 0], label="Desired Rot_x", linestyle="--", color="blue", linewidth=2)
+# plt.plot(simulation_time, actual_rot[:, 1], label="Actual Rot_y", color="green")
+# plt.plot(simulation_time, desired_rot[:, 1], label="Desired Rot_y", linestyle="--", color="green", linewidth=2)
+# plt.plot(simulation_time, actual_rot[:, 2], label="Actual Rot_z", color="red")
+# plt.plot(simulation_time, desired_rot[:, 2], label="Desired Rot_z", linestyle="--", color="red", linewidth=2)
+# plt.title("Rotation")
+# plt.xlabel("Time (s)")
+# plt.ylabel("Rotation (rad)")
+# # plt.legend()
+# plt.tight_layout()
+
+plt.subplot(4, 1, 4)
+plt.plot(simulation_time, actual_omega[:, 0], label="Actual Omega_x", color="blue")
+plt.plot(simulation_time, desired_omega[:, 0], label="Desired Omega_x", linestyle="--", color="blue", linewidth=2)
+plt.plot(simulation_time, actual_omega[:, 1], label="Actual Omega_y", color="green")
+plt.plot(simulation_time, desired_omega[:, 1], label="Desired Omega_y", linestyle="--", color="green", linewidth=2)
+plt.plot(simulation_time, actual_omega[:, 2], label="Actual Omega_z", color="red")
+plt.plot(simulation_time, desired_omega[:, 2], label="Desired Omega_z", linestyle="--", color="red", linewidth=2)
+plt.title("Omega")
+plt.xlabel("Time (s)")
+plt.ylabel("Omega (rad/s)")
+# plt.legend()
+plt.tight_layout()
+plt.show()

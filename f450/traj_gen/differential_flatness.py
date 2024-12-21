@@ -159,6 +159,50 @@ class TrajectoryOptimizer:
             states.append(d_states)
         return states, coeff
 
+    def get_yaw(self, vel):
+        curr_heading = vel/np.linalg.norm(vel)
+        prev_heading = self.heading
+        cosine = max(-1,min(np.dot(prev_heading, curr_heading),1))
+        dyaw = np.arccos(cosine)
+        norm_v = np.cross(prev_heading,curr_heading)
+        self.yaw += np.sign(norm_v)*dyaw
+
+        if self.yaw > np.pi: self.yaw -= 2*np.pi
+        if self.yaw < -np.pi: self.yaw += 2*np.pi
+
+        self.heading = curr_heading
+        yawdot = max(-30,min(dyaw/0.005,30))
+        return self.yaw,yawdot
+    
+    def solve(self, waypoint, t):
+        """
+        Evaluate the trajectory at a specific time t for the given waypoint.
+        """
+        Q = matrix(self.q_block())
+        A, f = self.constraint()
+        f = matrix(f)
+        A = matrix(A)
+        b = matrix(self.target(waypoint))
+        sol = solvers.qp(Q, f, None, None, A, b)
+        coeff = list(sol['x'])
+
+        states = []
+
+        for axis in range(len(self.n_coeffs)):
+            d_states = np.zeros(self.derivatives[axis] + 1)
+            j = np.nonzero(t <= self.times)[0][0] - 1
+            j = max(j, 0)
+            ti = t - self.times[j]
+            start_idx = sum(self.n_coeffs[:axis]) * len(self.T) + self.n_coeffs[axis] * j
+            end_idx = start_idx + self.n_coeffs[axis]
+            c = np.flip(coeff[start_idx:end_idx])
+            current_coeff = c
+            for d in range(self.derivatives[axis] + 1):
+                d_states[d] = np.polyval(current_coeff, ti)
+                current_coeff = np.polyder(current_coeff)
+            states.append(d_states)
+        return states
+
 
 if __name__ == "__main__":
     import numpy as np
@@ -168,11 +212,11 @@ if __name__ == "__main__":
     # Define waypoints and parameters
     waypoints = np.array([
         [0, 0, 0.35, 0],
-        [0, 5, 5, np.pi],
-        [5, 0, 5, np.pi/4],
-        [0, -5, 5, np.pi/4],
-        [-5, 0, 5, np.pi/4],
-        [0, 5, 10, np.pi/4],
+        [0, 5, 5, 0],
+        [5, 0, 5, 0],
+        [0, -5, 5, 0],
+        [-5, 0, 5, 0],
+        [0, 5, 10, 0],
     ])
 
     n_coeffs = [8, 8, 8, 4]  
@@ -183,14 +227,31 @@ if __name__ == "__main__":
     optimizer = TrajectoryOptimizer(n_coeffs, derivatives, times)
 
     # Generate trajectory
-    states, coeffs = optimizer.generate_trajectory(waypoints, num_points=100)
+    states, coeffs = optimizer.generate_trajectory(waypoints, num_points=500)
+    t = np.linspace(times[0], times[-1], 500)
+
+    states1 = []
+
+    for time in t:
+        state = optimizer.solve(waypoints, time)
+        states1.append(state)
+    
+    print(states1[0][3])
 
     # Extract trajectory states
-    x = states[0][0, :]
-    y = states[1][0, :]
-    z = states[2][0, :]
-    yaw = states[3][0, :]
-
+    x = states1[0][0, :]
+    y = states1[1][0, :]
+    z = states1[2][0, :]
+    yaw = states1[3][0, :]
+    
+    # vel = np.array([states[0][1, :], states[1][1, :], states[2][1, :]])  # vel x, y, z
+    # acc = np.array([states[0][2, :], states[1][2, :], states[2][2, :]])  # acc x, y, z
+    # jerk = np.array([states[0][3, :], states[1][3, :], states[2][3, :]])  # jerk x, y, z
+    # snap = np.array([states[0][4, :], states[1][4, :], states[2][4, :]])  # snap x, y, z
+    
+    # Time array
+    time = np.linspace(0, times[-1], len(x))
+    
     # Body frame directions (unit vectors in body frame)
     body_frame_length = 0.5
     u_x = body_frame_length * np.cos(yaw)  # X-direction in body frame
@@ -227,5 +288,37 @@ if __name__ == "__main__":
     ax.set_ylabel('Y')
     ax.set_zlabel('Z')
     ax.legend()
+
+    # # Plot velocity, acceleration, jerk, and snap
+    # fig2, axs = plt.subplots(4, 1, sharex=True, figsize=(10, 8))
+
+    # # Velocity
+    # axs[0].plot(time, vel[0], label='Vel X')
+    # axs[0].plot(time, vel[1], label='Vel Y')
+    # axs[0].plot(time, vel[2], label='Vel Z')
+    # axs[0].set_ylabel('Velocity (m/s)')
+    # axs[0].legend()
+
+    # # Acceleration
+    # axs[1].plot(time, acc[0], label='Acc X')
+    # axs[1].plot(time, acc[1], label='Acc Y')
+    # axs[1].plot(time, acc[2], label='Acc Z')
+    # axs[1].set_ylabel('Acceleration (m/s²)')
+    # axs[1].legend()
+
+    # # Jerk
+    # axs[2].plot(time, jerk[0], label='Jerk X')
+    # axs[2].plot(time, jerk[1], label='Jerk Y')
+    # axs[2].plot(time, jerk[2], label='Jerk Z')
+    # axs[2].set_ylabel('Jerk (m/s³)')
+    # axs[2].legend()
+
+    # # Snap
+    # axs[3].plot(time, snap[0], label='Snap X')
+    # axs[3].plot(time, snap[1], label='Snap Y')
+    # axs[3].plot(time, snap[2], label='Snap Z')
+    # axs[3].set_xlabel('Time (s)')
+    # axs[3].set_ylabel('Snap (m/s⁴)')
+    # axs[3].legend()
 
     plt.show()
